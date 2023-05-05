@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <!--
+    incipits generator
+    Copyright © JLR Software LLC
+
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+    Please find the full license at:
+    https://github.com/jr4/abctools/blob/main/LICENSE
+    -->
+
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <script src="http://moinejf.free.fr/js/abcweb-1.js"></script>
+    <script>
+      /***** user configuration section *****/
+
+      const sessionUserNumber = 146985 // log into thesession.org, click "your profile", and copy the number from the URL
+      const incipitBars = 2 // full bars shown per part
+      const maxPickupNotes = 3 // first bar can have this many notes without being counted against incipitBars
+      const titleSubstitutions = new Map() // These replace just the part of the title of the set/tune they match. Case-sensitive.
+      titleSubstitutions.set("The Ballydesmond, The Ballydesmond, The Ballydesmond.", "The Ballydesmond! The Ballydesmond!! The Ballydesmond!!!")
+      titleSubstitutions.set("The Creel Of Turf",          "Up Sligo")
+      titleSubstitutions.set("Off In The Morning",         "Croghan Hill")
+      titleSubstitutions.set("The Old Pigeon On The Gate", "Cathal McConnell's")
+      titleSubstitutions.set("Sonny Murray's",             "Delahunty's")
+      titleSubstitutions.set("Tabhair Dom Do Lámh",        "Give Me Your Hand")
+
+      /***** end user configuration - no user-serviceable parts below *****/
+
+      // see https://github.com/mdn/dom-examples/tree/main/streams/strings-transform-stream
+      class Uint8ArrayToStringsTransformer {
+        constructor() {
+          this.decoder = new TextDecoder()
+          this.lastString = ''
+        }
+
+        transform(chunk, controller) {
+          console.log('Received chunk with %d bytes', chunk.byteLength)
+          const string = `${this.lastString}${this.decoder.decode(chunk)}`
+          const lines = string.split(/\r\n|[\r\n]/g)
+          this.lastString = lines.pop() || ''
+          for (const line of lines) {
+            controller.enqueue(line)
+          }
+        }
+
+        flush(controller) {
+          if (this.lastString) {
+            controller.enqueue(this.lastString)
+          }
+        }
+      }
+
+      class TuneSet {
+        constructor(id) {
+          this.id = id
+          this.tunes = []
+          this.tuneLinks = []
+        }
+
+        get currentTune() {
+          if (this.tunes.length == 0) return undefined
+          return this.tunes[this.tunes.length-1]
+        }
+
+        setTitle(title) {
+          this.title = this.substituteTitle(title)
+        }
+
+        substituteTitle(title) {
+          var newTitle = title
+          for (const [key, value] of titleSubstitutions.entries()) {
+            newTitle = newTitle.replace(key, value)
+          }
+          newTitle = newTitle.trim()
+          return newTitle == title ? title : this.substituteTitle(newTitle)
+        }
+
+        addTune(title) {
+          const tune = new Tune(this.substituteTitle(title))
+          tune.addHeader('X: ' + this.id + '-' + (this.tunes.length + 1))
+          this.tunes.push(tune)
+        }
+
+        plural(rhythm) {
+          if (rhythm == 'waltz') return 'waltzes'
+          if (rhythm == 'march') return 'marches'
+          return rhythm + 's'
+        }
+
+        finalize() {
+          const gotLinks = (this.tunes.length == this.tuneLinks.length)
+          if (!gotLinks) {
+            console.warn('got %d tunes but %d tune links', this.tunes.length, this.tuneLinks.length)
+          }
+          for (var i = 0; i < this.tunes.length; i++) {
+            if (gotLinks) this.tunes[i].url = this.tuneLinks[i]
+            this.tunes[i].finalize()
+          }
+          if (this.tunes[0].rhythm) {
+            this.title = this.plural(this.tunes[0].rhythm) + ': ' + this.title
+          }
+        }
+
+        render() {
+          this.finalize()
+          const element = document.createElement('div')
+          element.className = 'set'
+          element.id = 'set' + this.id
+          const h = document.createElement('h4')
+          h.textContent = this.title
+          element.appendChild(h)
+
+          for (const tune of this.tunes) {
+            element.appendChild(tune.render())
+          }
+          return element
+        }
+      }
+
+      class Tune {
+        headerAbc = ''
+        tuneAbc = ''
+        currentPart = 1
+        isIncipit = true
+
+        constructor(title) {
+          this.title = title
+        }
+
+        addHeader(line) {
+          this.headerAbc += line + '\r\n'
+          if (line[0] == 'R') {
+            this.rhythm = line.substring(2).trim()
+          }
+        }
+
+        isFirstBarShort(line) {
+          var noteCount = 0
+          for (var i = 0; i < line.length; i++) {
+            if (line[i] == '|') return true
+            if (line[i] >= 'a' && line[i] <= 'g' || line[i] >= 'A' && line[i] <= 'G') noteCount++
+            if (noteCount > maxPickupNotes) return false 
+          }
+          return true
+        }
+
+        addLine(line) {
+          if (this.isIncipit) {
+            var cleanedLine = line.replace('|:', '|').replace('||', '|').replace(/\[\d+/, '|')
+            if (cleanedLine[0] == '|') {
+              cleanedLine = cleanedLine.substring(1)
+            }
+            cleanedLine = cleanedLine.trim()
+            var loc = -1
+            const bars = this.isFirstBarShort(cleanedLine) ? incipitBars + 1 : incipitBars
+            for (var i = 0; i < bars; i++) {
+              loc = cleanedLine.indexOf('|', loc+1)
+            }
+            if (loc > 0) {
+              cleanedLine = cleanedLine.substring(0, loc)
+            }
+            this.tuneAbc += this.currentPart % 2 == 0 ? '"@-22,20' : '"^'
+            if (this.currentPart == 1) {
+              this.tuneAbc += this.title + '"'
+            } else {
+              this.tuneAbc += String.fromCharCode(64 + this.currentPart) + 'part"'
+            }
+            if (this.currentPart % 2 == 0) this.tuneAbc += '||'
+            this.tuneAbc += cleanedLine + '||'
+            if (this.currentPart % 2 == 0) this.tuneAbc += '\r\n'
+            this.currentPart++
+          }
+          this.isIncipit = line.endsWith('||') || line.endsWith(':|')
+        }
+
+        finalize() {
+          this.addHeader('K: clef=none')
+        }
+
+        render() {
+          var element
+          if (this.url == undefined) {
+            element = document.createElement('div')
+          } else {
+            element = document.createElement('a')
+            element.setAttribute('href', this.url)
+          }
+          const abc = document.createElement('script');
+          abc.type = 'text/vnd.abc'
+          abc.textContent = '\r\n' + this.headerAbc + this.tuneAbc + '\r\n'
+          element.appendChild(abc)
+          return element
+        }
+      }
+
+      function removeThe(s) {
+        return s.replace(': The ', ': ').replace(': A ', ': ')
+      }
+
+      function insertionSort(set) {
+        const tunes = document.getElementById('tunes')
+        const setTitle = removeThe(set.firstElementChild.textContent)
+        for (var i = 0; i < tunes.children.length; i++) {
+          if (removeThe(tunes.children[i].firstElementChild.textContent) >= setTitle) break;
+        }
+        tunes.insertBefore(set, tunes.children.item(i))
+      }
+
+      async function fetchTunes() {
+        const ts = new TransformStream(new Uint8ArrayToStringsTransformer())
+        const response = await fetch('https://corsproxy.io?https://thesession.org/members/' + sessionUserNumber + '/sets/abc')
+        const rs = response.body
+        const lineStream = rs.pipeThrough(ts)
+        const reader = lineStream.getReader()
+        var currentSet
+        var setCount = 0
+        var tuneCount = 0
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            if (currentSet) this.insertionSort(currentSet.render())
+            console.log('rendered %d sets totalling %d tunes', setCount, tuneCount)
+            break
+          }
+          line = value.trim()
+          if (line.startsWith('X:')) {
+            currentSet = new TuneSet(line.substring(2).trim())
+            setCount++
+          } else if (line == '') {
+            if (currentSet) {
+              this.insertionSort(currentSet.render())
+              currentSet = undefined
+            }
+          } else if (currentSet == undefined) {
+            console.warn('no set for line: %s', line)
+          } else if (line.startsWith('S:')) {
+            currentSet.tuneLinks.push(line.substring(2).trim())
+          } else if (line.startsWith('T:')) {
+            if (currentSet.title == undefined) {
+              currentSet.setTitle(line.substring(2).trim())
+            } else {
+              currentSet.addTune(line.substring(2).trim())
+              tuneCount++
+            }
+          } else if (currentSet.currentTune == undefined) {
+            console.warn('no tune for line: %s', line)
+          } else if (line[1] == ':' && line[0] != '|') {
+            if (line[0] == 'K' || line[0] == 'L' || line[0] == 'R') {
+              currentSet.currentTune.addHeader(line)
+            }
+          } else {
+            currentSet.currentTune.addLine(line);
+          }
+        }
+
+        // Make the options available to abcweb.  We hid them so they are not processed (and deleted) during window onload.
+        const options = document.getElementById("abc-options")
+        if (options == undefined) {
+          console.warn('abc-options has disappeared')
+        } else {
+          options.type = 'text/vnd.abc'
+        }
+        dom_loaded()
+      }
+      window.removeEventListener("load", dom_loaded)
+
+      window.onbeforeprint = (event) => {
+        while (abc2svg.alldiv.length) {
+          abc2svg.musgen(abc2svg.alldiv[0])
+          abc2svg.alldiv.shift()
+        }
+      }
+    </script>
+    <script id="abc-options" type="text/hidden.abc">
+%abc-2.2
+%%topspace 0.1in
+%%titlespace 0
+%%musicspace 0
+%%composerspace 0
+%%staffsep 0
+%%leftmargin 0.05in
+%%rightmargin 0
+%%stretchstaff 0
+%%stretchlast 0
+%%pagescale .7
+    </script>
+    <style>
+      .set a { text-decoration: none; color: inherit; }
+      .set a:hover, a:active { color: revert }
+      div.set { max-width: 100%; break-inside: avoid; }
+      h1, h2, h3, h4, h5, h6 { margin-block-start: 0.1in; margin-block-end: 0; margin-right: 0.1in }
+
+      @media print {
+        body { column-count: 2 }
+      }
+    </style>
+  </head>
+  <body onload="fetchTunes()">
+    <main id="tunes"/>
+  </body>
+</html>
