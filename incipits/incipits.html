@@ -25,9 +25,6 @@
     <script>
       /***** user configuration section *****/
 
-      const sessionUserNumber = 146985 // log into thesession.org, click "your profile", and copy the number from the URL
-      const incipitBars = 2 // full bars shown per part
-      const maxPickupNotes = 3 // first bar can have this many notes without being counted against incipitBars
       const titleSubstitutions = new Map() // These replace just the part of the title of the set/tune they match. Case-sensitive.
       titleSubstitutions.set("The Ballydesmond, The Ballydesmond, The Ballydesmond.", "The Ballydesmond! The Ballydesmond!! The Ballydesmond!!!")
       titleSubstitutions.set("The Creel Of Turf",          "Up Sligo")
@@ -37,6 +34,43 @@
       titleSubstitutions.set("Tabhair Dom Do Lámh",        "Give Me Your Hand")
 
       /***** end user configuration - no user-serviceable parts below *****/
+
+      const urlParams = new Proxy(new URLSearchParams(window.location.search), {
+        get: (searchParams, prop) => searchParams.get(prop),
+      });
+
+      const sessionUserNumber = /^\d+$/.test(urlParams.u) ? +(urlParams.u) : getUid(urlParams.u)
+      const incipitBars = parseInt(urlParams.bars) || 2 // full bars shown per part
+      const maxPickupNotes = parseInt(urlParams.pickup) || 3 // first bar can have this many notes without being counted against incipitBars
+
+      function getUid(username) {
+        if (username) {
+          username = username.trim()
+          if (/^[\w\-\*\.]+$/.test(username)) {
+            const request = new XMLHttpRequest()
+            request.open('GET', 'https://corsproxy.io?https://thesession.org/members/search?q=' + username, false) // synchronous
+            request.send(null)
+            const response = request.responseText
+            const match = response.match(new RegExp('<a href="/members/(\\d+)".*?>' + username + '</a>')) // exact match
+            if (match && match[1]) {
+              const uid = +(match[1])
+              console.log("%s is %d", username, uid)
+              return uid
+            }
+          }
+        }
+        return null
+      }
+
+      window.removeEventListener("load", dom_loaded)
+
+      // before printing we need to render any elements not yet rendered
+      window.onbeforeprint = (event) => {
+        while (abc2svg.alldiv.length) {
+          abc2svg.musgen(abc2svg.alldiv[0])
+          abc2svg.alldiv.shift()
+        }
+      }
 
       // see https://github.com/mdn/dom-examples/tree/main/streams/strings-transform-stream
       class Uint8ArrayToStringsTransformer {
@@ -220,7 +254,16 @@
 
       async function fetchTunes() {
         const ts = new TransformStream(new Uint8ArrayToStringsTransformer())
+        if (!sessionUserNumber) {
+          document.getElementById('username-form').style = ''
+          return
+        }
         const response = await fetch('https://corsproxy.io?https://thesession.org/members/' + sessionUserNumber + '/sets/abc')
+        if (!response.ok) {
+          const tunes = document.getElementById('tunes')
+          tunes.textContent = 'fetch failed'
+          return
+        }
         const rs = response.body
         const lineStream = rs.pipeThrough(ts)
         const reader = lineStream.getReader()
@@ -274,14 +317,6 @@
         }
         dom_loaded()
       }
-      window.removeEventListener("load", dom_loaded)
-
-      window.onbeforeprint = (event) => {
-        while (abc2svg.alldiv.length) {
-          abc2svg.musgen(abc2svg.alldiv[0])
-          abc2svg.alldiv.shift()
-        }
-      }
     </script>
     <script id="abc-options" type="text/hidden.abc">
 %abc-2.2
@@ -308,6 +343,24 @@
     </style>
   </head>
   <body onload="fetchTunes()">
+    <div id="username-form" style="display: none">
+      <p>
+        This tool will go through all of a member's sets at <a href="https://thesession.org">thesession.org</a>
+        and show you just the first couple bars of each part of each tune.
+      </p>
+      <p>
+        Enter the username of any member that has saved sets.  No passwords are needed.  If you have trouble finding the username,
+        you can <a href="https://thesession.org/members/search">search</a> members.
+      </p>
+      <p>
+        If you bookmark the results, you will not need to repeat this step.
+      </p>
+      <form>
+        <label for="username">Username:</label>
+        <input id="username" name="u" type="text">
+        <input type="submit"/>
+      </form>
+      </div>
     <main id="tunes"/>
   </body>
 </html>
