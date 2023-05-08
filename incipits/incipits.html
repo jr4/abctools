@@ -27,6 +27,7 @@
 
       const titleSubstitutions = new Map() // These replace just the part of the title of the set/tune they match. Case-sensitive.
       titleSubstitutions.set("The Ballydesmond, The Ballydesmond, The Ballydesmond.", "The Ballydesmond! The Ballydesmond!! The Ballydesmond!!!")
+      titleSubstitutions.set("The Butlers Of Glen Avenue", "Christy Barry's #2")
       titleSubstitutions.set("The Creel Of Turf",          "Up Sligo")
       titleSubstitutions.set("Off In The Morning",         "Croghan Hill")
       titleSubstitutions.set("The Old Pigeon On The Gate", "Cathal McConnell's")
@@ -308,17 +309,10 @@
           }
         }
 
-        // Make the options available to abcweb.  We hid them so they are not processed (and deleted) during window onload.
-        const options = document.getElementById("abc-options")
-        if (options == undefined) {
-          console.warn('abc-options has disappeared')
-        } else {
-          options.type = 'text/vnd.abc'
-        }
         dom_loaded()
       }
     </script>
-    <script id="abc-options" type="text/hidden.abc">
+    <script id="abc-options" type="text/vnd.abc">
 %abc-2.2
 %%topspace 0.1in
 %%titlespace 0
