@@ -40,6 +40,7 @@
         get: (searchParams, prop) => searchParams.get(prop),
       });
 
+      const enableRenderSvg = urlParams.render != '0'
       const sessionUserNumber = /^\d+$/.test(urlParams.u) ? +(urlParams.u) : getUid(urlParams.u)
       const incipitBars = parseInt(urlParams.bars) || 2 // full bars shown per part
       const maxPickupNotes = parseInt(urlParams.pickup) || 3 // first bar can have this many notes without being counted against incipitBars
@@ -232,7 +233,7 @@
             element = document.createElement('a')
             element.setAttribute('href', this.url)
           }
-          const abc = document.createElement('script');
+          const abc = document.createElement(enableRenderSvg ? 'script' : 'pre');
           abc.type = 'text/vnd.abc'
           abc.textContent = '\r\n' + this.headerAbc + this.tuneAbc + '\r\n'
           element.appendChild(abc)
@@ -309,7 +310,11 @@
           }
         }
 
-        dom_loaded()
+        if (enableRenderSvg) {
+          dom_loaded()
+        } else {
+          console.log("svg rendering disabled")
+        }
       }
     </script>
     <script id="abc-options" type="text/vnd.abc">
@@ -323,6 +328,7 @@
 %%rightmargin 0
 %%stretchstaff 0
 %%stretchlast 0
+%%staffwidth 5.25in
 %%pagescale .7
     </script>
     <style>
