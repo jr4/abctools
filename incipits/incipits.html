@@ -48,12 +48,12 @@
       function getUid(username) {
         if (username) {
           username = username.trim()
-          if (/^[\w\-\*\.]+$/.test(username)) {
+          if (/^[\w\-\*\. ]+$/.test(username)) {
             const request = new XMLHttpRequest()
-            request.open('GET', 'https://corsproxy.io?https://thesession.org/members/search?q=' + username, false) // synchronous
+            request.open('GET', 'https://corsproxy.io?https://thesession.org/members/search?q=' + encodeURIComponent(username), false) // synchronous
             request.send(null)
             const response = request.responseText
-            const match = response.match(new RegExp('<a href="/members/(\\d+)".*?>' + username + '</a>')) // exact match
+            const match = response.match(new RegExp('<a href="/members/(\\d+)".*?>' + escapeRegExp(username) + '</a>', 'i'))
             if (match && match[1]) {
               const uid = +(match[1])
               console.log("%s is %d", username, uid)
@@ -254,6 +254,10 @@
         tunes.insertBefore(set, tunes.children.item(i))
       }
 
+      function escapeRegExp(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+
       async function fetchTunes() {
         const ts = new TransformStream(new Uint8ArrayToStringsTransformer())
         if (!sessionUserNumber) {
@@ -308,6 +312,11 @@
           } else {
             currentSet.currentTune.addLine(line);
           }
+        }
+
+        if (setCount == 0) {
+          const tunes = document.getElementById('tunes')
+          tunes.textContent = 'This member has no Saved Sets.'
         }
 
         if (enableRenderSvg) {
