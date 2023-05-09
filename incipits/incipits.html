@@ -40,7 +40,8 @@
         get: (searchParams, prop) => searchParams.get(prop),
       });
 
-      const enableRenderSvg = urlParams.render != '0'
+      const enableRenderSvg = urlParams.render != '0' // default render svg
+      const enableSvgErrors = urlParams.errors == '1' // default don't show errors
       const sessionUserNumber = /^\d+$/.test(urlParams.u) ? +(urlParams.u) : getUid(urlParams.u)
       const incipitBars = parseInt(urlParams.bars) || 2 // full bars shown per part
       const maxPickupNotes = parseInt(urlParams.pickup) || 3 // first bar can have this many notes without being counted against incipitBars
@@ -319,6 +320,10 @@
           tunes.textContent = 'This member has no Saved Sets.'
         }
 
+        if (enableSvgErrors) {
+          const style = document.getElementById('style-errors')
+          style.textContent = ''
+        }
         if (enableRenderSvg) {
           dom_loaded()
         } else {
@@ -349,6 +354,9 @@
       @media print {
         body { column-count: 2 }
       }
+    </style>
+    <style id="style-errors">
+      .nop { display: none }
     </style>
   </head>
   <body onload="fetchTunes()">
